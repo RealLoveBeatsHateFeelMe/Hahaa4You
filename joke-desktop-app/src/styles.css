@@ -1,0 +1,236 @@
+/**
+ * Hahha4You - 样式文件
+ * 使用CSS变量便于自定义修改
+ */
+
+/* ============ CSS 变量定义 ============ */
+:root {
+    /* 小球样式变量 */
+    --ball-size: 60px;
+    --ball-bg-color: #ff6b6b;
+    --ball-bg-gradient: linear-gradient(135deg, #ff6b6b 0%, #feca57 100%);
+    --ball-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+    --ball-hover-scale: 1.1;
+
+    /* 笑话窗口样式变量 */
+    --joke-bg-color: #ffffff;
+    --joke-border-radius: 16px;
+    --joke-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    --joke-header-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --joke-text-color: #333333;
+    --joke-font-size: 18px;
+
+    /* 按钮样式变量 */
+    --btn-primary-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --btn-primary-hover: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+    --btn-text-color: #ffffff;
+    --btn-border-radius: 25px;
+
+    /* 预览窗口样式变量 */
+    --preview-bg-color: #ffffff;
+    --preview-border-radius: 12px;
+    --preview-shadow: 0 8px 30px rgba(0, 0, 0, 0.15);
+
+    /* 通用变量 */
+    --font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+    --transition-speed: 0.3s;
+}
+
+/* ============ 通用样式 ============ */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: var(--font-family);
+    overflow: hidden;
+    user-select: none;
+}
+
+/* ============ 小球窗口样式 ============ */
+.ball-body {
+    background: transparent;
+    width: var(--ball-size);
+    height: var(--ball-size);
+}
+
+.floating-ball {
+    width: var(--ball-size);
+    height: var(--ball-size);
+    border-radius: 50%;
+    background: var(--ball-bg-gradient);
+    box-shadow: var(--ball-shadow);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: grab;
+    transition: transform var(--transition-speed) ease;
+}
+
+.floating-ball:active {
+    cursor: grabbing;
+}
+
+.floating-ball:hover {
+    transform: scale(var(--ball-hover-scale));
+}
+
+.ball-emoji {
+    font-size: 28px;
+    pointer-events: auto;
+}
+
+/* ============ 笑话窗口样式 ============ */
+.joke-body {
+    background: transparent;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.joke-container {
+    width: 100%;
+    height: 100%;
+    background: var(--joke-bg-color);
+    border-radius: var(--joke-border-radius);
+    box-shadow: var(--joke-shadow);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.joke-header {
+    background: var(--joke-header-bg);
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    -webkit-app-region: drag; /* 标题栏可拖动 */
+}
+
+.joke-title {
+    color: var(--btn-text-color);
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.close-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    color: var(--btn-text-color);
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-speed);
+    -webkit-app-region: no-drag; /* 关闭按钮可点击 */
+}
+
+.close-btn:hover {
+    background: rgba(255, 255, 255, 0.4);
+}
+
+.joke-content {
+    flex: 1;
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+}
+
+.joke-text {
+    color: var(--joke-text-color);
+    font-size: var(--joke-font-size);
+    line-height: 1.6;
+    text-align: left;
+    white-space: pre-line; /* 保留换行符 */
+}
+
+.joke-footer {
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+    border-top: 1px solid #eee;
+}
+
+.next-btn {
+    padding: 12px 32px;
+    border: none;
+    border-radius: var(--btn-border-radius);
+    background: var(--btn-primary-bg);
+    color: var(--btn-text-color);
+    font-size: 16px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all var(--transition-speed);
+}
+
+.next-btn:hover {
+    background: var(--btn-primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.next-btn:active {
+    transform: translateY(0);
+}
+
+/* ============ 预览窗口样式 ============ */
+.preview-body {
+    background: transparent;
+    width: 100%;
+    height: 100%;
+}
+
+.preview-container {
+    width: 100%;
+    height: 100%;
+    background: var(--preview-bg-color);
+    border-radius: var(--preview-border-radius);
+    box-shadow: var(--preview-shadow);
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.preview-image {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.preview-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+}
+
+.preview-placeholder span {
+    font-size: 48px;
+    margin-bottom: 8px;
+}
+
+.preview-placeholder p {
+    font-size: 14px;
+}
+
+/* 隐藏图片时显示占位符 */
+.preview-image.hidden {
+    display: none;
+}
+
+.preview-placeholder.hidden {
+    display: none;
+}

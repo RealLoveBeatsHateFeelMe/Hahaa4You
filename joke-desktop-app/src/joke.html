@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>笑话 - Hahha4You</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="joke-body">
+    <div class="joke-container">
+        <!-- 标题栏（可拖动） -->
+        <div class="joke-header">
+            <span class="joke-title">😂 Hahha4You</span>
+            <button id="close-btn" class="close-btn">×</button>
+        </div>
+
+        <!-- 笑话内容区域 -->
+        <div class="joke-content">
+            <p id="joke-text" class="joke-text">点击下方按钮获取笑话！</p>
+        </div>
+
+        <!-- 底部按钮区域 -->
+        <div class="joke-footer">
+            <button id="next-btn" class="next-btn">下一个笑话 👉</button>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+    <script>
+        // 初始化笑话窗口
+        initJokeWindow();
+    </script>
+</body>
+</html>
