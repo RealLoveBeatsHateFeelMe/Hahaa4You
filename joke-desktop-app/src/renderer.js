@@ -162,23 +162,102 @@ function initBall() {
         }
     });
 
-    // 点击小球（通过emoji） - 显示笑话窗口
+    // ============ 点击计数系统（支持单击/三击） ============
+    let clickCount = 0;
+    let clickTimer = null;
+    const CLICK_INTERVAL = 350;  // 点击间隔判定（毫秒）
+
+    // 点击小球（通过emoji） - 处理单击/三击
     ballEmoji.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (!isDragging) {
-            ipcRenderer.send('show-joke');
+        e.preventDefault();
+
+        if (isDragging) return;
+
+        // 通知主进程重置空闲计时器
+        ipcRenderer.send('user-activity');
+
+        clickCount++;
+
+        // 清除之前的计时器
+        if (clickTimer) {
+            clearTimeout(clickTimer);
+            clickTimer = null;
+        }
+
+        // 三击立即触发终极毁灭（不用等）
+        if (clickCount >= 3) {
+            clickCount = 0;
+            // 清除自动显示笑话的计时器
+            if (autoShowTimeout) {
+                clearTimeout(autoShowTimeout);
+                autoShowTimeout = null;
+            }
+            ipcRenderer.send('ultimate-destroy');
+            return;
+        }
+
+        // 延迟判断是单击还是双击
+        clickTimer = setTimeout(() => {
+            if (clickCount === 1) {
+                // 单击显示笑话窗口
+                ipcRenderer.send('show-joke');
+            } else if (clickCount === 2) {
+                // 双击触发散弹枪效果
+                ipcRenderer.send('shotgun-fire');
+            }
+            clickCount = 0;
+        }, CLICK_INTERVAL);
+    });
+
+    // 超速弹簧炮效果 - 蓄力缩小
+    let chargeShakeInterval = null;
+    ipcRenderer.on('ball-charge', (event, isCharging) => {
+        if (isCharging) {
+            // 极度压缩 + 蓄力抖动
+            ball.style.transition = 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)';
+            ball.style.transform = 'scale(0.25)';
+            ball.style.boxShadow = '0 0 60px #ff0, 0 0 100px #f80';
+            // 蓄力抖动
+            let shakeCount = 0;
+            chargeShakeInterval = setInterval(() => {
+                shakeCount++;
+                const intensity = Math.min(shakeCount * 0.5, 8);
+                const offsetX = (Math.random() - 0.5) * intensity;
+                const offsetY = (Math.random() - 0.5) * intensity;
+                ball.style.transform = `scale(0.25) translate(${offsetX}px, ${offsetY}px)`;
+            }, 20);
+        } else {
+            // 停止抖动
+            if (chargeShakeInterval) {
+                clearInterval(chargeShakeInterval);
+                chargeShakeInterval = null;
+            }
+            // 爆发放大！
+            ball.style.transition = 'transform 0.08s cubic-bezier(0, 0.9, 0.3, 1.5)';
+            ball.style.transform = 'scale(1.8)';
+            ball.style.boxShadow = '0 0 80px #fff, 0 0 120px #ff0';
+            setTimeout(() => {
+                ball.style.transition = 'transform 0.15s ease-out, box-shadow 0.3s';
+                ball.style.transform = '';
+                ball.style.boxShadow = '';
+            }, 80);
         }
     });
 
-    // 双击小球 - 触发弹跳动画
-    ball.addEventListener('dblclick', (e) => {
-        e.preventDefault();
-        // 清除自动显示笑话的计时器
-        if (autoShowTimeout) {
-            clearTimeout(autoShowTimeout);
-            autoShowTimeout = null;
+    // 超速弹簧炮效果 - 碰撞挤压变形
+    ipcRenderer.on('ball-squash', (event, direction) => {
+        if (direction === 'horizontal') {
+            ball.style.transition = 'transform 0.06s ease-out';
+            ball.style.transform = 'scaleX(0.6) scaleY(1.4)';
+        } else {
+            ball.style.transition = 'transform 0.06s ease-out';
+            ball.style.transform = 'scaleX(1.4) scaleY(0.6)';
         }
-        ipcRenderer.send('bounce-around');
+        setTimeout(() => {
+            ball.style.transform = '';
+            ball.style.transition = '';
+        }, 60);
     });
 }
 

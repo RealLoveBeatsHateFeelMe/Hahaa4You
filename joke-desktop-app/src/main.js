@@ -3,7 +3,7 @@
  * 管理所有窗口：悬浮小球、预览窗口、笑话窗口
  */
 
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
 const path = require('path');
 const remoteMain = require('@electron/remote/main');
 
@@ -14,6 +14,7 @@ remoteMain.initialize();
 let ballWindow = null;
 let previewWindow = null;
 let jokeWindow = null;
+let overlayWindow = null;  // 特效叠加层窗口
 
 // 窗口配置常量
 const BALL_SIZE = 60;
@@ -26,6 +27,25 @@ const JOKE_HEIGHT = 300;
 let ballEdge = 'right';
 let isHalfHidden = true;
 let isBouncing = false;  // 防止连续触发弹跳动画
+
+// 5分钟空闲自动弹跳计时器
+let idleTimer = null;
+const IDLE_TIMEOUT = 5 * 60 * 1000;  // 5分钟 = 300000毫秒
+
+function resetIdleTimer() {
+    if (idleTimer) {
+        clearTimeout(idleTimer);
+    }
+    idleTimer = setTimeout(() => {
+        // 5分钟无操作，自动触发疯狂乱弹
+        if (!isBouncing && ballWindow && !ballWindow.isDestroyed()) {
+            triggerCrazyBounce();
+        }
+    }, IDLE_TIMEOUT);
+}
+
+// 声明 triggerCrazyBounce 函数（在后面定义）
+let triggerCrazyBounce = null;
 
 /**
  * 创建悬浮小球窗口
@@ -63,8 +83,12 @@ function createBallWindow() {
         ballWindow = null;
         if (previewWindow) previewWindow.close();
         if (jokeWindow) jokeWindow.close();
+        if (idleTimer) clearTimeout(idleTimer);
         app.quit();
     });
+
+    // 启动5分钟空闲计时器
+    resetIdleTimer();
 }
 
 /**
@@ -310,6 +334,9 @@ function createJokeWindow() {
 app.whenReady().then(() => {
     createBallWindow();
 
+    // 注册全局快捷键 Ctrl+Alt+1 触发散弹枪（在shotgun-fire handler之后定义triggerShotgunFire）
+    // 注意：快捷键注册会在所有IPC handler设置完成后生效
+
     // IPC 事件处理
     ipcMain.on('show-preview', (event, position) => {
         if (!ballWindow) return;
@@ -366,6 +393,7 @@ app.whenReady().then(() => {
 
     // 鼠标进入小球，显示完整
     ipcMain.on('ball-mouse-enter', () => {
+        resetIdleTimer();  // 重置空闲计时器
         showFullBall();
     });
 
@@ -383,7 +411,13 @@ app.whenReady().then(() => {
     });
 
     ipcMain.on('show-joke', () => {
+        resetIdleTimer();  // 重置空闲计时器
         createJokeWindow();
+    });
+
+    // 用户活动 - 重置空闲计时器
+    ipcMain.on('user-activity', () => {
+        resetIdleTimer();
     });
 
     ipcMain.on('close-joke', () => {
@@ -503,13 +537,21 @@ app.whenReady().then(() => {
         animate();
     });
 
-    // 双击小球 - 真实物理弹跳动画！
+    // 疯狂乱弹效果（5分钟空闲自动触发 或 手动触发）
     ipcMain.on('bounce-around', () => {
+        triggerCrazyBounce();
+    });
+
+    // 疯狂乱弹核心函数 - 赋值给全局变量
+    triggerCrazyBounce = function() {
         if (!ballWindow) return;
 
-        // 防止连续点击触发多个动画
+        // 防止连续触发多个动画
         if (isBouncing) return;
         isBouncing = true;
+
+        // 重置空闲计时器
+        resetIdleTimer();
 
         // 关闭笑话窗口
         if (jokeWindow && !jokeWindow.isDestroyed()) {
@@ -529,167 +571,86 @@ app.whenReady().then(() => {
         let previewStartY = screenHeight / 2 - PREVIEW_HEIGHT / 2;
         createPreviewWindow(previewStartX, previewStartY);
 
-        // ===== 台球物理模拟 =====
-        // 小球状态 - 爆发式起步！
-        let ballX = ballStartX;
-        let ballY = ballStartY;
-        let ballVelX = 150;   // 超猛烈起始速度！
-        let ballVelY = -130;
-        let ballShakeX = 0;
-        let ballShakeY = 0;
-        let ballShakeDecay = 0;
-
-        // 预览窗口状态
-        let previewX = previewStartX;
-        let previewY = previewStartY;
-        let previewVelX = -140;
-        let previewVelY = 120;
-        let previewShakeX = 0;
-        let previewShakeY = 0;
-        let previewShakeDecay = 0;
-
-        // 物理参数 - 超弹力台球
-        const friction = 0.994;      // 更低阻力，保持速度
-        const bounceLoss = 0.93;     // 超高弹性！几乎不损失能量
-        const shakeIntensity = 80;   // 超强震颤！
-        const shakeFreq = 100;       // 超快震颤频率
-
         // 边界
         const ballMaxX = screenWidth - BALL_SIZE;
         const ballMaxY = screenHeight - BALL_SIZE;
         const previewMaxX = screenWidth - PREVIEW_WIDTH;
         const previewMaxY = screenHeight - PREVIEW_HEIGHT;
 
-        // 时间参数
-        const bounceDuration = 2500;  // 自由弹跳时间
-        const pauseDuration = 300;    // 停顿时间
-        const returnDuration = 400;   // 返回动画时间
-        const totalDuration = bounceDuration + pauseDuration + returnDuration;
+        // ===== 疯狂乱弹 =====
+        let ballX = ballStartX;
+        let ballY = ballStartY;
+        // 随机角度发射 - 2倍速！
+        const angle = Math.random() * Math.PI * 2;
+        let ballVelX = Math.cos(angle) * 70;
+        let ballVelY = Math.sin(angle) * 70;
+
+        // 预览窗口状态
+        let previewX = previewStartX;
+        let previewY = previewStartY;
+        const previewAngle = Math.random() * Math.PI * 2;
+        let previewVelX = Math.cos(previewAngle) * 60;
+        let previewVelY = Math.sin(previewAngle) * 60;
+
+        const duration = 5000;  // 5秒
+        const pauseDuration = 300;
+        const returnDuration = 400;
         const startTime = Date.now();
 
-        // 记录弹跳结束时的位置（用于返回动画）
         let bounceEndBallX = ballStartX;
         let bounceEndBallY = ballStartY;
 
         const animate = () => {
             const elapsed = Date.now() - startTime;
 
-            if (elapsed < bounceDuration) {
-                // ===== 自由弹跳阶段 =====
-
-                // 更新小球位置
+            if (elapsed < duration) {
+                // 更新位置
                 ballX += ballVelX;
                 ballY += ballVelY;
-
-                // 小球碰撞检测 + 震颤
-                if (ballX <= 0) {
-                    ballX = 0;
-                    ballVelX = -ballVelX * bounceLoss;
-                    ballShakeX = shakeIntensity;
-                    ballShakeDecay = 1;
-                } else if (ballX >= ballMaxX) {
-                    ballX = ballMaxX;
-                    ballVelX = -ballVelX * bounceLoss;
-                    ballShakeX = -shakeIntensity;
-                    ballShakeDecay = 1;
-                }
-
-                if (ballY <= 0) {
-                    ballY = 0;
-                    ballVelY = -ballVelY * bounceLoss;
-                    ballShakeY = shakeIntensity;
-                    ballShakeDecay = 1;
-                } else if (ballY >= ballMaxY) {
-                    ballY = ballMaxY;
-                    ballVelY = -ballVelY * bounceLoss;
-                    ballShakeY = -shakeIntensity;
-                    ballShakeDecay = 1;
-                }
-
-                // 更新预览窗口位置
                 previewX += previewVelX;
                 previewY += previewVelY;
 
-                // 预览窗口碰撞检测 + 震颤
-                if (previewX <= 0) {
-                    previewX = 0;
-                    previewVelX = -previewVelX * bounceLoss;
-                    previewShakeX = shakeIntensity;
-                    previewShakeDecay = 1;
-                } else if (previewX >= previewMaxX) {
-                    previewX = previewMaxX;
-                    previewVelX = -previewVelX * bounceLoss;
-                    previewShakeX = -shakeIntensity;
-                    previewShakeDecay = 1;
+                // 小球碰撞 + 随机偏转
+                if (ballX <= 0 || ballX >= ballMaxX) {
+                    ballVelX = -ballVelX;
+                    ballX = Math.max(0, Math.min(ballX, ballMaxX));
+                    ballVelY += (Math.random() - 0.5) * 18;  // 随机偏转
+                }
+                if (ballY <= 0 || ballY >= ballMaxY) {
+                    ballVelY = -ballVelY;
+                    ballY = Math.max(0, Math.min(ballY, ballMaxY));
+                    ballVelX += (Math.random() - 0.5) * 18;  // 随机偏转
                 }
 
-                if (previewY <= 0) {
-                    previewY = 0;
-                    previewVelY = -previewVelY * bounceLoss;
-                    previewShakeY = shakeIntensity;
-                    previewShakeDecay = 1;
-                } else if (previewY >= previewMaxY) {
-                    previewY = previewMaxY;
-                    previewVelY = -previewVelY * bounceLoss;
-                    previewShakeY = -shakeIntensity;
-                    previewShakeDecay = 1;
+                // 预览窗口碰撞
+                if (previewX <= 0 || previewX >= previewMaxX) {
+                    previewVelX = -previewVelX;
+                    previewX = Math.max(0, Math.min(previewX, previewMaxX));
+                    previewVelY += (Math.random() - 0.5) * 15;
                 }
-
-                // 应用空气阻力
-                ballVelX *= friction;
-                ballVelY *= friction;
-                previewVelX *= friction;
-                previewVelY *= friction;
-
-                // 计算震颤效果 - 快速衰减的震动
-                let ballDisplayX = ballX;
-                let ballDisplayY = ballY;
-                let previewDisplayX = previewX;
-                let previewDisplayY = previewY;
-
-                if (ballShakeDecay > 0) {
-                    // 高频震颤 + 逐渐衰减
-                    const shake = Math.sin(elapsed * shakeFreq) * ballShakeDecay;
-                    ballDisplayX += ballShakeX * shake;
-                    ballDisplayY += ballShakeY * shake * 0.5;
-                    ballShakeDecay *= 0.85;
-                    if (ballShakeDecay < 0.05) ballShakeDecay = 0;
-                }
-
-                if (previewShakeDecay > 0) {
-                    const shake = Math.sin(elapsed * shakeFreq * 1.1) * previewShakeDecay;
-                    previewDisplayX += previewShakeX * shake;
-                    previewDisplayY += previewShakeY * shake * 0.5;
-                    previewShakeDecay *= 0.85;
-                    if (previewShakeDecay < 0.05) previewShakeDecay = 0;
+                if (previewY <= 0 || previewY >= previewMaxY) {
+                    previewVelY = -previewVelY;
+                    previewY = Math.max(0, Math.min(previewY, previewMaxY));
+                    previewVelX += (Math.random() - 0.5) * 15;
                 }
 
                 // 更新窗口位置
                 if (ballWindow && !ballWindow.isDestroyed()) {
-                    ballWindow.setPosition(
-                        Math.round(Math.max(0, Math.min(ballDisplayX, ballMaxX))),
-                        Math.round(Math.max(0, Math.min(ballDisplayY, ballMaxY)))
-                    );
+                    ballWindow.setPosition(Math.round(ballX), Math.round(ballY));
                 }
                 if (previewWindow && !previewWindow.isDestroyed()) {
-                    previewWindow.setPosition(
-                        Math.round(Math.max(0, Math.min(previewDisplayX, previewMaxX))),
-                        Math.round(Math.max(0, Math.min(previewDisplayY, previewMaxY)))
-                    );
+                    previewWindow.setPosition(Math.round(previewX), Math.round(previewY));
                 }
 
-                // 记录弹跳结束位置
                 bounceEndBallX = ballX;
                 bounceEndBallY = ballY;
 
-            } else if (elapsed < bounceDuration + pauseDuration) {
-                // ===== 停顿阶段（0.3秒）=====
-                // 保持在当前位置不动
+            } else if (elapsed < duration + pauseDuration) {
+                // 停顿
 
-            } else if (elapsed < totalDuration) {
-                // ===== 返回原位阶段 =====
-                const returnProgress = (elapsed - bounceDuration - pauseDuration) / returnDuration;
-                // 平滑缓动
+            } else if (elapsed < duration + pauseDuration + returnDuration) {
+                // 返回原位
+                const returnProgress = (elapsed - duration - pauseDuration) / returnDuration;
                 const ease = 1 - Math.pow(1 - returnProgress, 3);
 
                 const currentBallX = bounceEndBallX + (ballStartX - bounceEndBallX) * ease;
@@ -698,27 +659,26 @@ app.whenReady().then(() => {
                 if (ballWindow && !ballWindow.isDestroyed()) {
                     ballWindow.setPosition(Math.round(currentBallX), Math.round(currentBallY));
                 }
-                // 预览窗口在返回阶段隐藏
                 if (previewWindow && !previewWindow.isDestroyed()) {
                     previewWindow.hide();
                 }
 
             } else {
-                // ===== 动画结束 =====
+                // 动画结束
                 if (ballWindow && !ballWindow.isDestroyed()) {
                     ballWindow.setPosition(Math.round(ballStartX), Math.round(ballStartY));
                 }
                 isHalfHidden = false;
-                hideHalfBall();  // 恢复半隐藏状态
+                hideHalfBall();
                 isBouncing = false;
-                return;  // 结束动画循环
+                return;
             }
 
-            setTimeout(animate, 6);  // ~166fps 更流畅
+            setTimeout(animate, 6);
         };
 
         animate();
-    });
+    }
 
     ipcMain.handle('get-ball-position', () => {
         if (ballWindow) {
@@ -726,6 +686,202 @@ app.whenReady().then(() => {
         }
         return null;
     });
+
+    // ============ 散弹枪风暴功能（提取为函数，便于快捷键调用）============
+    function triggerShotgunFire() {
+        if (!ballWindow) return;
+
+        // 防止连续触发
+        if (isBouncing) return;
+        isBouncing = true;
+
+        // 关闭笑话窗口和预览窗口
+        if (jokeWindow && !jokeWindow.isDestroyed()) {
+            jokeWindow.close();
+            jokeWindow = null;
+        }
+        if (previewWindow && !previewWindow.isDestroyed()) {
+            previewWindow.close();
+            previewWindow = null;
+        }
+
+        const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+
+        // 创建全屏特效叠加层
+        overlayWindow = new BrowserWindow({
+            width: screenWidth,
+            height: screenHeight,
+            x: 0,
+            y: 0,
+            frame: false,
+            transparent: true,
+            alwaysOnTop: true,
+            resizable: false,
+            skipTaskbar: true,
+            focusable: false,
+            webPreferences: {
+                nodeIntegration: true,
+                contextIsolation: false
+            }
+        });
+
+        overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
+        overlayWindow.setIgnoreMouseEvents(true);
+
+        // 获取小球位置
+        const ballBounds = ballWindow.getBounds();
+        const ballCenterX = ballBounds.x + BALL_SIZE / 2;
+        const ballCenterY = ballBounds.y + BALL_SIZE / 2;
+
+        // 隐藏小球
+        ballWindow.hide();
+
+        // overlay 加载完成后发送散弹枪事件
+        overlayWindow.webContents.once('did-finish-load', () => {
+            if (overlayWindow && !overlayWindow.isDestroyed()) {
+                overlayWindow.webContents.send('start-shotgun', {
+                    ballX: ballCenterX,
+                    ballY: ballCenterY,
+                    screenWidth,
+                    screenHeight
+                });
+            }
+        });
+
+        // 特效完成后恢复（约28秒，加上终结枪的时间）
+        setTimeout(() => {
+            // 关闭叠加层
+            if (overlayWindow && !overlayWindow.isDestroyed()) {
+                overlayWindow.close();
+                overlayWindow = null;
+            }
+
+            // 恢复小球
+            if (ballWindow && !ballWindow.isDestroyed()) {
+                ballWindow.show();
+            }
+
+            isBouncing = false;
+        }, 28000);
+    }
+
+    // ============ 双击 - 散弹枪风暴！ ============
+    ipcMain.on('shotgun-fire', triggerShotgunFire);
+
+    // ============ 全局快捷键 Ctrl+Alt+1 触发散弹枪！ ============
+    globalShortcut.register('CommandOrControl+Alt+1', triggerShotgunFire);
+
+    // ============ 终极毁灭功能（提取为函数，便于快捷键调用）============
+    function triggerUltimateDestroy() {
+        if (!ballWindow) return;
+
+        // 防止连续触发
+        if (isBouncing) return;
+        isBouncing = true;
+
+        // 关闭笑话窗口和预览窗口
+        if (jokeWindow && !jokeWindow.isDestroyed()) {
+            jokeWindow.close();
+            jokeWindow = null;
+        }
+        if (previewWindow && !previewWindow.isDestroyed()) {
+            previewWindow.close();
+            previewWindow = null;
+        }
+
+        const { width: screenWidth, height: screenHeight } = screen.getPrimaryDisplay().workAreaSize;
+
+        // 创建全屏特效叠加层
+        overlayWindow = new BrowserWindow({
+            width: screenWidth,
+            height: screenHeight,
+            x: 0,
+            y: 0,
+            frame: false,
+            transparent: true,
+            alwaysOnTop: true,
+            resizable: false,
+            skipTaskbar: true,
+            focusable: false,
+            webPreferences: {
+                nodeIntegration: true,
+                contextIsolation: false
+            }
+        });
+
+        overlayWindow.loadFile(path.join(__dirname, 'overlay.html'));
+        overlayWindow.setIgnoreMouseEvents(true);
+
+        // 获取小球起始位置
+        const ballBounds = ballWindow.getBounds();
+        const ballStartX = ballBounds.x;
+        const ballStartY = ballBounds.y;
+
+        // 小球移动到屏幕中心
+        const centerX = screenWidth / 2 - BALL_SIZE / 2;
+        const centerY = screenHeight / 2 - BALL_SIZE / 2;
+
+        // 蓄力动画 - 小球飞到中心
+        let moveProgress = 0;
+        const moveToCenter = () => {
+            moveProgress += 0.08;
+            if (moveProgress >= 1) moveProgress = 1;
+
+            const ease = 1 - Math.pow(1 - moveProgress, 3);
+            const currentX = ballStartX + (centerX - ballStartX) * ease;
+            const currentY = ballStartY + (centerY - ballStartY) * ease;
+
+            if (ballWindow && !ballWindow.isDestroyed()) {
+                ballWindow.setPosition(Math.round(currentX), Math.round(currentY));
+            }
+
+            if (moveProgress < 1) {
+                setTimeout(moveToCenter, 16);
+            } else {
+                // 通知叠加层开始特效
+                if (overlayWindow && !overlayWindow.isDestroyed()) {
+                    overlayWindow.webContents.send('start-destruction', {
+                        ballX: centerX + BALL_SIZE / 2,
+                        ballY: centerY + BALL_SIZE / 2,
+                        screenWidth,
+                        screenHeight
+                    });
+                }
+
+                // 隐藏小球
+                if (ballWindow && !ballWindow.isDestroyed()) {
+                    ballWindow.hide();
+                }
+
+                // 特效完成后恢复
+                setTimeout(() => {
+                    // 关闭叠加层
+                    if (overlayWindow && !overlayWindow.isDestroyed()) {
+                        overlayWindow.close();
+                        overlayWindow = null;
+                    }
+
+                    // 恢复小球
+                    if (ballWindow && !ballWindow.isDestroyed()) {
+                        ballWindow.setPosition(Math.round(ballStartX), Math.round(ballStartY));
+                        ballWindow.show();
+                    }
+
+                    isHalfHidden = false;
+                    hideHalfBall();
+                    isBouncing = false;
+                }, 60000);  // 60秒后恢复（核弹翻5倍，需要更多时间）
+            }
+        };
+
+        setTimeout(moveToCenter, 100);
+    }
+
+    // ============ 三连击 - 终极毁灭！ ============
+    ipcMain.on('ultimate-destroy', triggerUltimateDestroy);
+
+    // ============ 全局快捷键 Ctrl+Alt+2 触发核弹！ ============
+    globalShortcut.register('CommandOrControl+Alt+2', triggerUltimateDestroy);
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -738,4 +894,9 @@ app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') {
         app.quit();
     }
+});
+
+// 退出时注销所有快捷键
+app.on('will-quit', () => {
+    globalShortcut.unregisterAll();
 });

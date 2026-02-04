@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>Ultimate Destroy Overlay</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+        }
+        #container {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            overflow: hidden;
+        }
+        .shard, .bullet-hole, .crack-line, .bullet-trail, .explosion-core,
+        .shockwave, .fire-particle, .smoke, .mushroom-cloud, .flash-screen,
+        .crater, .debris, .dust, .deep-crack {
+            position: absolute;
+            pointer-events: none;
+        }
+        .shard { z-index: 100; }
+        .bullet-hole {
+            border-radius: 50%;
+            background: radial-gradient(circle, #000 0%, #222 40%, #444 60%, transparent 70%);
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+            z-index: 50;
+        }
+        .crack-line {
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent);
+            height: 2px;
+            transform-origin: left center;
+            z-index: 55;
+        }
+        .crater {
+            border-radius: 50%;
+            background: radial-gradient(ellipse, #000 0%, #111 30%, #222 50%, #333 70%, transparent 85%);
+            box-shadow: inset 0 5px 20px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.5);
+            z-index: 45;
+        }
+        .deep-crack {
+            background: linear-gradient(90deg, transparent 0%, #111 20%, #000 50%, #111 80%, transparent 100%);
+            height: 3px;
+            transform-origin: left center;
+            z-index: 48;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+        .debris {
+            border-radius: 30% 70% 50% 50%;
+            z-index: 60;
+            box-shadow: 1px 2px 3px rgba(0,0,0,0.5);
+        }
+        .bullet-trail {
+            height: 3px;
+            background: linear-gradient(90deg, transparent, #ff0, #fff, #ff0, transparent);
+            z-index: 150;
+        }
+        .explosion-core { border-radius: 50%; z-index: 120; mix-blend-mode: screen; }
+        .shockwave { border-radius: 50%; border: 4px solid rgba(255, 200, 100, 0.8); z-index: 110; }
+        .fire-particle { border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%; z-index: 90; }
+        .smoke { border-radius: 50%; z-index: 80; filter: blur(15px); }
+        .mushroom-cloud { border-radius: 50%; z-index: 85; }
+        .flash-screen { top: 0; left: 0; right: 0; bottom: 0; z-index: 200; }
+
+        @keyframes shake {
+            0%, 100% { transform: translate(0, 0); }
+            10% { transform: translate(-5px, -3px); }
+            20% { transform: translate(4px, 5px); }
+            30% { transform: translate(-6px, 2px); }
+            40% { transform: translate(3px, -4px); }
+            50% { transform: translate(-2px, 6px); }
+            60% { transform: translate(5px, -2px); }
+            70% { transform: translate(-3px, 4px); }
+            80% { transform: translate(6px, -5px); }
+            90% { transform: translate(-4px, 3px); }
+        }
+        @keyframes shake-heavy {
+            0%, 100% { transform: translate(0, 0); }
+            10% { transform: translate(-12px, -8px); }
+            20% { transform: translate(10px, 12px); }
+            30% { transform: translate(-14px, 6px); }
+            40% { transform: translate(8px, -10px); }
+            50% { transform: translate(-6px, 14px); }
+            60% { transform: translate(12px, -4px); }
+            70% { transform: translate(-8px, 10px); }
+            80% { transform: translate(14px, -12px); }
+            90% { transform: translate(-10px, 8px); }
+        }
+        @keyframes shake-extreme {
+            0%, 100% { transform: translate(0, 0); }
+            5% { transform: translate(-25px, -18px); }
+            10% { transform: translate(22px, 25px); }
+            15% { transform: translate(-28px, 12px); }
+            20% { transform: translate(18px, -22px); }
+            25% { transform: translate(-12px, 28px); }
+            30% { transform: translate(25px, -8px); }
+            35% { transform: translate(-18px, 22px); }
+            40% { transform: translate(28px, -25px); }
+            45% { transform: translate(-22px, 18px); }
+            50% { transform: translate(15px, -28px); }
+            55% { transform: translate(-28px, 22px); }
+            60% { transform: translate(22px, -15px); }
+            65% { transform: translate(-15px, 28px); }
+            70% { transform: translate(28px, -22px); }
+            75% { transform: translate(-22px, 15px); }
+            80% { transform: translate(18px, -28px); }
+            85% { transform: translate(-28px, 25px); }
+            90% { transform: translate(25px, -18px); }
+            95% { transform: translate(-18px, 22px); }
+        }
+        .shaking { animation: shake 0.15s ease-in-out; }
+        .shaking-heavy { animation: shake-heavy 0.2s ease-in-out; }
+        .shaking-extreme { animation: shake-extreme 0.25s ease-in-out; }
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+
+    <script>
+        const { ipcRenderer } = require('electron');
+        const container = document.getElementById('container');
+        let w, h, cx, cy;
+
+        // ===== 音效系统 =====
+        const path = require('path');
+
+        // 音效文件路径 - 把你的散弹枪音效放到 assets/sounds/shotgun.mp3 或 .wav
+        const soundsPath = path.join(__dirname, '..', 'assets', 'sounds');
+        const shotgunSoundFile = path.join(soundsPath, 'shotgun.mp3');  // 支持 mp3/wav/ogg
+
+        // 预加载音频
+        let shotgunAudio = null;
+        let useSynthSound = false;  // 是否使用合成音效
+
+        // 尝试加载音频文件
+        try {
+            const fs = require('fs');
+            // 检查多种格式
+            const formats = ['shotgun.mp3', 'shotgun.wav', 'shotgun.ogg'];
+            let foundFile = null;
+            for (const fmt of formats) {
+                const filePath = path.join(soundsPath, fmt);
+                if (fs.existsSync(filePath)) {
+                    foundFile = filePath;
+                    break;
+                }
+            }
+
+            if (foundFile) {
+                // 创建音频池（多个Audio对象，避免重叠播放问题）
+                shotgunAudio = [];
+                for (let i = 0; i < 10; i++) {
+                    const audio = new Audio(foundFile);
+                    audio.volume = 0.8;
+                    shotgunAudio.push(audio);
+                }
+                console.log('已加载散弹枪音效:', foundFile);
+            } else {
+                console.log('未找到散弹枪音效文件，使用合成音效');
+                console.log('请将音效文件放到: ' + soundsPath);
+                console.log('支持格式: shotgun.mp3 / shotgun.wav / shotgun.ogg');
+                useSynthSound = true;
+            }
+        } catch (e) {
+            console.log('加载音效失败，使用合成音效:', e);
+            useSynthSound = true;
+        }
+
+        let audioPoolIndex = 0;
+
+        let audioCtx = null;
+        function getAudioContext() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return audioCtx;
+        }
+
+        // 播放散弹枪音效（可调音量）
+        function playShotgunSound(volume = 0.8) {
+            // 优先使用音频文件
+            if (shotgunAudio && shotgunAudio.length > 0) {
+                const audio = shotgunAudio[audioPoolIndex];
+                audioPoolIndex = (audioPoolIndex + 1) % shotgunAudio.length;
+                audio.volume = Math.min(1, volume);
+                audio.currentTime = 0;
+                audio.play().catch(() => {});
+                return;
+            }
+
+            // 备用：合成音效
+            playSynthShotgunSound();
+        }
+
+        // 合成散弹枪音效（M1216风格 - 低音+脆声）
+        function playSynthShotgunSound() {
+            const ctx = getAudioContext();
+            const now = ctx.currentTime;
+
+            // ===== 1. 低频冲击"咚" =====
+            const bassFreqs = [40, 55, 70];
+            bassFreqs.forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now);
+                osc.frequency.exponentialRampToValueAtTime(freq * 0.3, now + 0.12);
+
+                const gain = ctx.createGain();
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(1.8 - i * 0.3, now + 0.003);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.25);
+            });
+
+            // ===== 2. 中频爆裂"嘭" =====
+            const boomLen = ctx.sampleRate * 0.2;
+            const boomBuf = ctx.createBuffer(1, boomLen, ctx.sampleRate);
+            const boomData = boomBuf.getChannelData(0);
+            for (let i = 0; i < boomLen; i++) {
+                const t = i / boomLen;
+                const attack = t < 0.005 ? t / 0.005 : 1;
+                const decay = Math.pow(1 - t, 2.5);
+                boomData[i] = (Math.random() * 2 - 1) * attack * decay;
+            }
+
+            const boom = ctx.createBufferSource();
+            boom.buffer = boomBuf;
+
+            const boomBPF = ctx.createBiquadFilter();
+            boomBPF.type = 'bandpass';
+            boomBPF.frequency.setValueAtTime(400, now);
+            boomBPF.Q.setValueAtTime(0.8, now);
+
+            const boomGain = ctx.createGain();
+            boomGain.gain.setValueAtTime(1.5, now);
+
+            boom.connect(boomBPF);
+            boomBPF.connect(boomGain);
+            boomGain.connect(ctx.destination);
+
+            // ===== 3. 高频"脆"声！M1216的关键！=====
+            const crispLen = ctx.sampleRate * 0.06;
+            const crispBuf = ctx.createBuffer(1, crispLen, ctx.sampleRate);
+            const crispData = crispBuf.getChannelData(0);
+            for (let i = 0; i < crispLen; i++) {
+                const t = i / crispLen;
+                // 快速衰减的高频噪音
+                crispData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 5);
+            }
+
+            const crisp = ctx.createBufferSource();
+            crisp.buffer = crispBuf;
+
+            // 高通滤波 - 只保留高频"脆"声
+            const crispHPF = ctx.createBiquadFilter();
+            crispHPF.type = 'highpass';
+            crispHPF.frequency.setValueAtTime(2500, now);
+
+            const crispGain = ctx.createGain();
+            crispGain.gain.setValueAtTime(1.2, now);  // 脆声要响！
+
+            crisp.connect(crispHPF);
+            crispHPF.connect(crispGain);
+            crispGain.connect(ctx.destination);
+
+            // ===== 4. 中高频"啪"（弹丸出膛）=====
+            const snapLen = ctx.sampleRate * 0.03;
+            const snapBuf = ctx.createBuffer(1, snapLen, ctx.sampleRate);
+            const snapData = snapBuf.getChannelData(0);
+            for (let i = 0; i < snapLen; i++) {
+                const t = i / snapLen;
+                snapData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 6);
+            }
+
+            const snap = ctx.createBufferSource();
+            snap.buffer = snapBuf;
+
+            const snapBPF = ctx.createBiquadFilter();
+            snapBPF.type = 'bandpass';
+            snapBPF.frequency.setValueAtTime(1500, now);
+            snapBPF.Q.setValueAtTime(2, now);
+
+            const snapGain = ctx.createGain();
+            snapGain.gain.setValueAtTime(0.9, now);
+
+            snap.connect(snapBPF);
+            snapBPF.connect(snapGain);
+            snapGain.connect(ctx.destination);
+
+            // ===== 5. 机械声 =====
+            setTimeout(() => {
+                const mechLen = ctx.sampleRate * 0.035;
+                const mechBuf = ctx.createBuffer(1, mechLen, ctx.sampleRate);
+                const mechData = mechBuf.getChannelData(0);
+                for (let i = 0; i < mechLen; i++) {
+                    const t = i / mechLen;
+                    mechData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 4);
+                }
+
+                const mech = ctx.createBufferSource();
+                mech.buffer = mechBuf;
+
+                const mechBPF = ctx.createBiquadFilter();
+                mechBPF.type = 'bandpass';
+                mechBPF.frequency.setValueAtTime(1000, ctx.currentTime);
+                mechBPF.Q.setValueAtTime(3, ctx.currentTime);
+
+                const mechGain = ctx.createGain();
+                mechGain.gain.setValueAtTime(0.3, ctx.currentTime);
+
+                mech.connect(mechBPF);
+                mechBPF.connect(mechGain);
+                mechGain.connect(ctx.destination);
+                mech.start();
+            }, 50);
+
+            // ===== 6. 短混响 =====
+            const reverbLen = ctx.sampleRate * 0.3;
+            const reverbBuf = ctx.createBuffer(2, reverbLen, ctx.sampleRate);
+            for (let ch = 0; ch < 2; ch++) {
+                const reverbData = reverbBuf.getChannelData(ch);
+                for (let i = 0; i < reverbLen; i++) {
+                    const t = i / reverbLen;
+                    reverbData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2) * 0.3;
+                }
+            }
+
+            const convolver = ctx.createConvolver();
+            convolver.buffer = reverbBuf;
+
+            const reverbGain = ctx.createGain();
+            reverbGain.gain.setValueAtTime(0.25, now);
+
+            boomGain.connect(convolver);
+            convolver.connect(reverbGain);
+            reverbGain.connect(ctx.destination);
+
+            // ===== 播放 =====
+            boom.start(now);
+            crisp.start(now);
+            snap.start(now);
+        }
+
+        function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+        // 合成核弹爆炸音效（深沉的爆炸声 + 余波轰鸣）
+        function playNukeSound(power = 1, isFinal = false) {
+            const ctx = getAudioContext();
+            const now = ctx.currentTime;
+            const volume = Math.min(1, 0.4 + power * 0.15);
+
+            // ===== 1. 超低频冲击波"轰" =====
+            const subBassFreqs = [25, 35, 45, 55];
+            subBassFreqs.forEach((freq, i) => {
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(freq, now);
+                osc.frequency.exponentialRampToValueAtTime(freq * 0.2, now + 0.4);
+
+                const gain = ctx.createGain();
+                gain.gain.setValueAtTime(0, now);
+                gain.gain.linearRampToValueAtTime(volume * (1.5 - i * 0.2), now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5 + power * 0.1);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(now);
+                osc.stop(now + 0.6 + power * 0.1);
+            });
+
+            // ===== 2. 爆炸主体噪音 =====
+            const explosionLen = ctx.sampleRate * (0.4 + power * 0.1);
+            const explosionBuf = ctx.createBuffer(1, explosionLen, ctx.sampleRate);
+            const explosionData = explosionBuf.getChannelData(0);
+            for (let i = 0; i < explosionLen; i++) {
+                const t = i / explosionLen;
+                const attack = t < 0.02 ? t / 0.02 : 1;
+                const decay = Math.pow(1 - t, 1.5);
+                explosionData[i] = (Math.random() * 2 - 1) * attack * decay;
+            }
+
+            const explosion = ctx.createBufferSource();
+            explosion.buffer = explosionBuf;
+
+            // 低通滤波 - 使声音更加沉闷
+            const explosionLPF = ctx.createBiquadFilter();
+            explosionLPF.type = 'lowpass';
+            explosionLPF.frequency.setValueAtTime(800, now);
+            explosionLPF.frequency.exponentialRampToValueAtTime(200, now + 0.3);
+
+            const explosionGain = ctx.createGain();
+            explosionGain.gain.setValueAtTime(volume * 1.2, now);
+
+            explosion.connect(explosionLPF);
+            explosionLPF.connect(explosionGain);
+            explosionGain.connect(ctx.destination);
+
+            // ===== 3. 中频爆裂"嘭" =====
+            const boomLen = ctx.sampleRate * 0.25;
+            const boomBuf = ctx.createBuffer(1, boomLen, ctx.sampleRate);
+            const boomData = boomBuf.getChannelData(0);
+            for (let i = 0; i < boomLen; i++) {
+                const t = i / boomLen;
+                const attack = t < 0.008 ? t / 0.008 : 1;
+                const decay = Math.pow(1 - t, 2);
+                boomData[i] = (Math.random() * 2 - 1) * attack * decay;
+            }
+
+            const boom = ctx.createBufferSource();
+            boom.buffer = boomBuf;
+
+            const boomBPF = ctx.createBiquadFilter();
+            boomBPF.type = 'bandpass';
+            boomBPF.frequency.setValueAtTime(300, now);
+            boomBPF.Q.setValueAtTime(0.5, now);
+
+            const boomGain = ctx.createGain();
+            boomGain.gain.setValueAtTime(volume * 0.9, now);
+
+            boom.connect(boomBPF);
+            boomBPF.connect(boomGain);
+            boomGain.connect(ctx.destination);
+
+            // ===== 4. 余波轰鸣（长尾音）=====
+            const rumbleLen = ctx.sampleRate * (0.8 + power * 0.2);
+            const rumbleBuf = ctx.createBuffer(1, rumbleLen, ctx.sampleRate);
+            const rumbleData = rumbleBuf.getChannelData(0);
+            for (let i = 0; i < rumbleLen; i++) {
+                const t = i / rumbleLen;
+                // 渐弱的低频噪音
+                rumbleData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 1.2) * 0.6;
+            }
+
+            const rumble = ctx.createBufferSource();
+            rumble.buffer = rumbleBuf;
+
+            const rumbleLPF = ctx.createBiquadFilter();
+            rumbleLPF.type = 'lowpass';
+            rumbleLPF.frequency.setValueAtTime(150, now);
+
+            const rumbleGain = ctx.createGain();
+            rumbleGain.gain.setValueAtTime(volume * 0.5, now);
+            rumbleGain.gain.exponentialRampToValueAtTime(0.01, now + 0.8 + power * 0.2);
+
+            rumble.connect(rumbleLPF);
+            rumbleLPF.connect(rumbleGain);
+            rumbleGain.connect(ctx.destination);
+
+            // ===== 5. 终极核弹额外音效 =====
+            if (isFinal) {
+                // 超级低音震撼
+                const megaBassOsc = ctx.createOscillator();
+                megaBassOsc.type = 'sine';
+                megaBassOsc.frequency.setValueAtTime(20, now);
+                megaBassOsc.frequency.exponentialRampToValueAtTime(10, now + 1);
+
+                const megaBassGain = ctx.createGain();
+                megaBassGain.gain.setValueAtTime(0, now);
+                megaBassGain.gain.linearRampToValueAtTime(1, now + 0.05);
+                megaBassGain.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+
+                megaBassOsc.connect(megaBassGain);
+                megaBassGain.connect(ctx.destination);
+                megaBassOsc.start(now);
+                megaBassOsc.stop(now + 1.5);
+            }
+
+            // ===== 播放 =====
+            explosion.start(now);
+            boom.start(now);
+            rumble.start(now + 0.1);
+        }
+
+        function shake(level = 'normal') {
+            container.classList.remove('shaking', 'shaking-heavy', 'shaking-extreme');
+            void container.offsetWidth;
+            container.classList.add(level === 'extreme' ? 'shaking-extreme' : level === 'heavy' ? 'shaking-heavy' : 'shaking');
+        }
+
+        function flash(color = 'white', duration = 100) {
+            const el = document.createElement('div');
+            el.className = 'flash-screen';
+            el.style.background = color;
+            el.style.opacity = '1';
+            container.appendChild(el);
+            setTimeout(() => {
+                el.style.transition = `opacity ${duration}ms`;
+                el.style.opacity = '0';
+                setTimeout(() => el.remove(), duration);
+            }, 30);
+        }
+
+        function createShard(x, y, size, hue = null) {
+            const shard = document.createElement('div');
+            shard.className = 'shard';
+            const actualSize = size + Math.random() * size;
+            const h = hue !== null ? hue : 200 + Math.random() * 60;
+            const points = [];
+            const numPoints = 4 + Math.floor(Math.random() * 3);
+            for (let i = 0; i < numPoints; i++) {
+                const angle = (i / numPoints) * Math.PI * 2 + Math.random() * 0.5;
+                const r = 0.4 + Math.random() * 0.6;
+                points.push(`${50 + Math.cos(angle) * 50 * r}% ${50 + Math.sin(angle) * 50 * r}%`);
+            }
+            shard.style.cssText = `
+                left: ${x}px; top: ${y}px;
+                width: ${actualSize}px; height: ${actualSize}px;
+                background: linear-gradient(${Math.random() * 360}deg, hsla(${h}, 70%, 70%, 0.9), hsla(${h + 30}, 60%, 50%, 0.7));
+                clip-path: polygon(${points.join(', ')});
+            `;
+            container.appendChild(shard);
+            return shard;
+        }
+
+        function createCrack(x, y, angle, length) {
+            const crack = document.createElement('div');
+            crack.className = 'crack-line';
+            crack.style.cssText = `left: ${x}px; top: ${y}px; width: ${length}px; transform: rotate(${angle}rad);`;
+            container.appendChild(crack);
+            return crack;
+        }
+
+        // 核弹渲染函数
+        function renderNuke(nuke) {
+            // 播放爆炸音效！
+            playNukeSound(nuke.power, nuke.final);
+
+            // 爆炸核心
+            const core = document.createElement('div');
+            core.className = 'explosion-core';
+            const coreSize = 30 * nuke.power * (nuke.intense ? 1.2 : 1);
+            const coreGradient = nuke.intense
+                ? 'radial-gradient(circle, #fff 0%, #ff4400 15%, #cc0000 30%, #880000 50%, #220000 70%, transparent 80%)'
+                : 'radial-gradient(circle, #fff 0%, #ff0 20%, #f80 40%, #f00 60%, transparent 70%)';
+            core.style.cssText = `
+                left: ${nuke.x}px; top: ${nuke.y}px;
+                width: ${coreSize}px; height: ${coreSize}px;
+                margin: -${coreSize/2}px;
+                background: ${coreGradient};
+                transition: all ${0.12 * nuke.power}s ease-out;
+            `;
+            container.appendChild(core);
+            setTimeout(() => {
+                const expandSize = coreSize * (nuke.final ? 8 : 4);
+                core.style.width = expandSize + 'px';
+                core.style.height = expandSize + 'px';
+                core.style.margin = -expandSize/2 + 'px';
+                core.style.opacity = '0';
+            }, 10);
+
+            // 只震动，不闪屏
+            shake(nuke.final ? 'extreme' : nuke.power > 2.5 || nuke.intense ? 'heavy' : 'normal');
+
+            // 红色爆炸冲击波（大量！）
+            const waveCount = nuke.final ? 20 : 5 + Math.floor(nuke.power * 2);
+            for (let i = 0; i < waveCount; i++) {
+                setTimeout(() => {
+                    const wave = document.createElement('div');
+                    wave.className = 'shockwave';
+                    // 红色系爆炸颜色
+                    const redColors = ['#ff0000', '#ff3300', '#ff5500', '#cc0000', '#ff2200', '#ee0000', '#ff4400', '#dd0000'];
+                    wave.style.cssText = `
+                        left: ${nuke.x + (Math.random() - 0.5) * 30}px;
+                        top: ${nuke.y + (Math.random() - 0.5) * 30}px;
+                        width: 20px; height: 20px; margin: -10px;
+                        border-color: ${redColors[i % redColors.length]};
+                        border-width: ${3 + Math.random() * 4}px;
+                        transition: all ${0.12 + nuke.power * 0.04}s ease-out;
+                    `;
+                    container.appendChild(wave);
+                    const waveSize = (80 + nuke.power * 60 + Math.random() * 40) * (nuke.final ? 2.5 : 1);
+                    setTimeout(() => {
+                        wave.style.width = waveSize + 'px';
+                        wave.style.height = waveSize + 'px';
+                        wave.style.margin = -waveSize/2 + 'px';
+                        wave.style.opacity = '0';
+                    }, 5);
+                }, i * 12);
+            }
+
+            // 额外的红色余波（爆炸残留）
+            const aftershockCount = nuke.intense ? 8 : 4;
+            for (let i = 0; i < aftershockCount; i++) {
+                setTimeout(() => {
+                    const aftershock = document.createElement('div');
+                    aftershock.style.cssText = `
+                        position: absolute;
+                        left: ${nuke.x + (Math.random() - 0.5) * 60}px;
+                        top: ${nuke.y + (Math.random() - 0.5) * 60}px;
+                        width: ${20 + nuke.power * 15}px;
+                        height: ${20 + nuke.power * 15}px;
+                        margin: -${10 + nuke.power * 7.5}px;
+                        background: radial-gradient(circle, rgba(255, 50, 0, 0.9) 0%, rgba(200, 0, 0, 0.6) 40%, transparent 70%);
+                        border-radius: 50%;
+                        pointer-events: none;
+                        z-index: 115;
+                        transition: all 0.25s ease-out;
+                    `;
+                    container.appendChild(aftershock);
+                    const expandSize = (40 + nuke.power * 30) * (nuke.final ? 3 : 1);
+                    setTimeout(() => {
+                        aftershock.style.width = expandSize + 'px';
+                        aftershock.style.height = expandSize + 'px';
+                        aftershock.style.margin = -expandSize/2 + 'px';
+                        aftershock.style.opacity = '0';
+                    }, 10);
+                }, 50 + i * 40);
+            }
+
+            // 蘑菇云（数量翻5倍！）
+            if (nuke.power >= 1.5) {
+                const cloudCount = nuke.intense ? 15 : 10;  // 原来2-3，现在10-15
+                for (let i = 0; i < cloudCount; i++) {
+                    setTimeout(() => {
+                        const cloud = document.createElement('div');
+                        cloud.className = 'mushroom-cloud';
+                        const cloudSize = (30 + nuke.power * 15 + i * 10) * (nuke.intense ? 1.2 : 1);
+                        const cloudGradient = nuke.intense
+                            ? `radial-gradient(circle, rgba(${70 - i * 15}, ${25 - i * 8}, 0, 0.85) 0%, rgba(15, 5, 0, 0.5) 50%, transparent 70%)`
+                            : `radial-gradient(circle, rgba(${220 - i * 25}, ${80 - i * 15}, 0, 0.75) 0%, transparent 70%)`;
+                        cloud.style.cssText = `
+                            left: ${nuke.x + (Math.random() - 0.5) * 20}px;
+                            top: ${nuke.y}px;
+                            width: ${cloudSize}px; height: ${cloudSize}px;
+                            margin: -${cloudSize/2}px;
+                            background: ${cloudGradient};
+                            filter: blur(${3 + i * 2}px);
+                            transition: all ${0.35 + i * 0.08}s ease-out;
+                        `;
+                        container.appendChild(cloud);
+                        setTimeout(() => {
+                            cloud.style.top = (nuke.y - 60 - i * 20 - nuke.power * 20) + 'px';
+                            cloud.style.width = (cloudSize * 2) + 'px';
+                            cloud.style.height = (cloudSize * 1.6) + 'px';
+                            cloud.style.opacity = '0';
+                        }, 10);
+                    }, i * 20);
+                }
+            }
+
+            // 火焰粒子（数量翻5倍！）
+            const fireCount = nuke.final ? 500 : nuke.intense ? 200 : 125;
+            for (let i = 0; i < fireCount; i++) {
+                setTimeout(() => {
+                    const fire = document.createElement('div');
+                    fire.className = 'fire-particle';
+                    const size = (4 + Math.random() * 10) * nuke.power * (nuke.intense ? 1.3 : 1);
+                    const type = Math.random();
+                    let gradient;
+                    if (nuke.intense && type < 0.3) {
+                        gradient = 'radial-gradient(ellipse, rgba(25,12,0,0.9) 0%, rgba(0,0,0,0.6) 70%, transparent 100%)';
+                    } else if (nuke.intense) {
+                        gradient = `radial-gradient(ellipse, #ff${type < 0.6 ? '3300' : '5500'} 0%, #880000 50%, #330000 80%, transparent 100%)`;
+                    } else {
+                        const hue = Math.random() * 50;
+                        gradient = `radial-gradient(ellipse, hsl(${hue}, 100%, 75%) 0%, hsl(${hue + 15}, 100%, 40%) 60%, transparent 100%)`;
+                    }
+                    fire.style.cssText = `
+                        left: ${nuke.x}px; top: ${nuke.y}px;
+                        width: ${size}px; height: ${size * 1.4}px;
+                        background: ${gradient};
+                        transition: all 0.18s ease-out;
+                    `;
+                    container.appendChild(fire);
+                    const angle = Math.random() * Math.PI * 2;
+                    const dist = (25 + Math.random() * 70) * nuke.power * (nuke.final ? 2 : 1);
+                    setTimeout(() => {
+                        fire.style.left = (nuke.x + Math.cos(angle) * dist) + 'px';
+                        fire.style.top = (nuke.y + Math.sin(angle) * dist - 18 * nuke.power) + 'px';
+                        fire.style.opacity = '0';
+                    }, 5);
+                }, Math.random() * 35);
+            }
+
+            // 烟雾
+            const smokeCount = nuke.final ? 25 : nuke.intense ? 12 : 6;
+            for (let i = 0; i < smokeCount; i++) {
+                setTimeout(() => {
+                    const smoke = document.createElement('div');
+                    smoke.className = 'smoke';
+                    const size = (18 + Math.random() * 30) * nuke.power * (nuke.intense ? 1.3 : 1);
+                    const smokeColor = nuke.intense
+                        ? (Math.random() < 0.5 ? 'rgba(10, 5, 0, 0.75)' : 'rgba(25, 12, 5, 0.65)')
+                        : 'rgba(45, 45, 45, 0.45)';
+                    smoke.style.cssText = `
+                        left: ${nuke.x + (Math.random() - 0.5) * 40 * nuke.power}px;
+                        top: ${nuke.y + (Math.random() - 0.5) * 30 * nuke.power}px;
+                        width: ${size}px; height: ${size}px;
+                        background: ${smokeColor};
+                        transition: all ${0.35 + Math.random() * nuke.power * 0.2}s ease-out;
+                    `;
+                    container.appendChild(smoke);
+                    setTimeout(() => {
+                        smoke.style.top = (nuke.y - 50 - Math.random() * 80 * nuke.power) + 'px';
+                        smoke.style.transform = `scale(${1.2 + Math.random() * nuke.power})`;
+                        smoke.style.opacity = '0';
+                    }, 10);
+                }, 30 + Math.random() * 60 * nuke.power);
+            }
+
+            // 永久弹坑
+            const crater = document.createElement('div');
+            crater.className = 'crater';
+            const craterSize = 12 + nuke.power * 10;
+            crater.style.cssText = `
+                left: ${nuke.x - craterSize/2}px; top: ${nuke.y - craterSize/2}px;
+                width: ${craterSize}px; height: ${craterSize * 0.6}px;
+            `;
+            container.appendChild(crater);
+
+            // 深裂痕
+            const crackCount = 3 + Math.floor(nuke.power);
+            for (let i = 0; i < crackCount; i++) {
+                const crack = document.createElement('div');
+                crack.className = 'deep-crack';
+                const crackAngle = (i / crackCount) * Math.PI * 2 + Math.random() * 0.5;
+                const crackLen = (18 + Math.random() * 35) * nuke.power;
+                crack.style.cssText = `left: ${nuke.x}px; top: ${nuke.y}px; width: ${crackLen}px; transform: rotate(${crackAngle}rad);`;
+                container.appendChild(crack);
+            }
+
+            // 残骸
+            for (let i = 0; i < 4 + nuke.power * 2; i++) {
+                const debris = document.createElement('div');
+                debris.className = 'debris';
+                const debrisSize = 2 + Math.random() * 4;
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 12 + Math.random() * 50 * nuke.power;
+                debris.style.cssText = `
+                    left: ${nuke.x + Math.cos(angle) * dist}px;
+                    top: ${nuke.y + Math.sin(angle) * dist}px;
+                    width: ${debrisSize}px; height: ${debrisSize * 0.6}px;
+                    background: #${['333', '444', '222'][Math.floor(Math.random() * 3)]};
+                    transform: rotate(${Math.random() * 360}deg);
+                `;
+                container.appendChild(debris);
+            }
+        }
+
+        // 超速子弹
+        function fireBulletFast(targetX, targetY, holeSize = 8) {
+            const side = Math.floor(Math.random() * 4);
+            let startX, startY;
+            if (side === 0) { startX = -30; startY = Math.random() * h; }
+            else if (side === 1) { startX = w + 30; startY = Math.random() * h; }
+            else if (side === 2) { startX = Math.random() * w; startY = -30; }
+            else { startX = Math.random() * w; startY = h + 30; }
+
+            const trail = document.createElement('div');
+            trail.className = 'bullet-trail';
+            const angle = Math.atan2(targetY - startY, targetX - startX);
+            const dist = Math.sqrt((targetX - startX) ** 2 + (targetY - startY) ** 2);
+            trail.style.cssText = `left: ${startX}px; top: ${startY}px; width: 0px; transform: rotate(${angle}rad); transition: width 0.02s linear;`;
+            container.appendChild(trail);
+            setTimeout(() => { trail.style.width = dist + 'px'; }, 1);
+            setTimeout(() => { trail.remove(); }, 120);
+
+            setTimeout(() => {
+                const hole = document.createElement('div');
+                hole.className = 'bullet-hole';
+                const actualSize = holeSize + Math.random() * 5;
+                hole.style.cssText = `left: ${targetX - actualSize/2}px; top: ${targetY - actualSize/2}px; width: ${actualSize}px; height: ${actualSize}px;`;
+                container.appendChild(hole);
+
+                // 小裂纹
+                for (let j = 0; j < 2; j++) {
+                    const crackAngle = Math.random() * Math.PI * 2;
+                    createCrack(targetX, targetY, crackAngle, 8 + Math.random() * 15);
+                }
+            }, 5);
+        }
+
+        // 终极毁灭主流程
+        async function ultimateDestroy(ballX, ballY) {
+            cx = ballX;
+            cy = ballY;
+
+            // ===== 第一阶段：300发加特林扫射！=====
+            shake('extreme');
+            for (let i = 0; i < 300; i += 3) {
+                fireBulletFast(5 + Math.random() * (w - 10), 5 + Math.random() * (h - 10), 4 + Math.random() * 5);
+                fireBulletFast(5 + Math.random() * (w - 10), 5 + Math.random() * (h - 10), 4 + Math.random() * 5);
+                fireBulletFast(5 + Math.random() * (w - 10), 5 + Math.random() * (h - 10), 4 + Math.random() * 5);
+                if (i % 15 === 0) {
+                    shake('extreme');
+                    await sleep(18);
+                }
+            }
+
+            await sleep(500);  // 扫射完等一下，再开始核爆
+
+            // ===== 第二阶段：300连核爆 + 步枪同步扫射！（原来60发，翻5倍！）=====
+            const nukes = [];
+            // 四角（4发 × 5 = 20发）
+            for (let r = 0; r < 5; r++) {
+                nukes.push({ x: 50 + r * 15, y: 50 + r * 15, power: 1.5 + r * 0.2, delay: 40 });
+                nukes.push({ x: w - 50 - r * 15, y: 50 + r * 15, power: 1.5 + r * 0.2, delay: 35 });
+                nukes.push({ x: 50 + r * 15, y: h - 50 - r * 15, power: 1.5 + r * 0.2, delay: 35 });
+                nukes.push({ x: w - 50 - r * 15, y: h - 50 - r * 15, power: 1.5 + r * 0.2, delay: 35 });
+            }
+            // 四边中点（4发 × 5 = 20发）
+            for (let r = 0; r < 5; r++) {
+                nukes.push({ x: cx + (Math.random() - 0.5) * 100, y: 40 + r * 20, power: 1.8 + r * 0.15, delay: 30 });
+                nukes.push({ x: cx + (Math.random() - 0.5) * 100, y: h - 40 - r * 20, power: 1.8 + r * 0.15, delay: 30 });
+                nukes.push({ x: 40 + r * 20, y: cy + (Math.random() - 0.5) * 100, power: 1.8 + r * 0.15, delay: 30 });
+                nukes.push({ x: w - 40 - r * 20, y: cy + (Math.random() - 0.5) * 100, power: 1.8 + r * 0.15, delay: 30 });
+            }
+            // 中间区域（20发 × 5 = 100发）
+            for (let i = 0; i < 100; i++) {
+                nukes.push({
+                    x: cx + (Math.random() - 0.5) * w * 0.7,
+                    y: cy + (Math.random() - 0.5) * h * 0.7,
+                    power: 2 + Math.random() * 2,
+                    delay: 25
+                });
+            }
+            // 狂暴轰炸（30发 × 5 = 150发，极速！带intense标记）
+            for (let i = 0; i < 150; i++) {
+                nukes.push({
+                    x: 40 + Math.random() * (w - 80),
+                    y: 40 + Math.random() * (h - 80),
+                    power: 2.5 + Math.random() * 2.5,
+                    delay: 18,
+                    intense: true
+                });
+            }
+            // 最后10发超级核弹（原来2发，翻5倍）
+            for (let i = 0; i < 8; i++) {
+                nukes.push({
+                    x: cx + (Math.random() - 0.5) * 200,
+                    y: cy + (Math.random() - 0.5) * 200,
+                    power: 5 + Math.random(),
+                    delay: 50,
+                    intense: true
+                });
+            }
+            nukes.push({ x: cx - 30, y: cy, power: 6, delay: 60, intense: true });
+            nukes.push({ x: cx, y: cy, power: 8, delay: 80, intense: true, final: true });
+
+            // 执行300连核爆 + 同步步枪扫射！
+            let bulletCounter = 0;
+            for (const nuke of nukes) {
+                await sleep(nuke.delay);
+                renderNuke(nuke);
+
+                // 每发核弹同时发射5发步枪子弹！
+                for (let b = 0; b < 5; b++) {
+                    fireBulletFast(
+                        5 + Math.random() * (w - 10),
+                        5 + Math.random() * (h - 10),
+                        4 + Math.random() * 6
+                    );
+                }
+                bulletCounter += 5;
+
+                // 每10发核弹额外加一波密集扫射
+                if (bulletCounter % 50 === 0) {
+                    for (let burst = 0; burst < 20; burst++) {
+                        fireBulletFast(
+                            5 + Math.random() * (w - 10),
+                            5 + Math.random() * (h - 10),
+                            5 + Math.random() * 8
+                        );
+                    }
+                }
+            }
+
+            await sleep(200);
+
+            // ===== 第三阶段：最终密集扫射（翻5倍：350 × 5 = 1750发！分批执行）=====
+            shake('extreme');
+            for (let wave = 0; wave < 5; wave++) {
+                for (let i = 0; i < 350; i += 3) {
+                    fireBulletFast(5 + Math.random() * (w - 10), 5 + Math.random() * (h - 10), 5 + Math.random() * 7);
+                    fireBulletFast(5 + Math.random() * (w - 10), 5 + Math.random() * (h - 10), 5 + Math.random() * 7);
+                    fireBulletFast(5 + Math.random() * (w - 10), 5 + Math.random() * (h - 10), 5 + Math.random() * 7);
+                    if (i % 30 === 0) {
+                        shake('extreme');
+                        await sleep(1);
+                    }
+                }
+                // 每波之间加几发核弹
+                for (let n = 0; n < 5; n++) {
+                    renderNuke({
+                        x: Math.random() * w,
+                        y: Math.random() * h,
+                        power: 3 + Math.random() * 2,
+                        intense: true
+                    });
+                }
+                await sleep(50);
+            }
+
+            await sleep(300);
+
+            // ===== 第四阶段：最后一拳！巨大裂痕碎屏 =====
+            await sleep(300);
+
+            // 蓄力预告 - 红色余波代替闪屏
+            for (let i = 0; i < 5; i++) {
+                setTimeout(() => {
+                    const warn = document.createElement('div');
+                    warn.className = 'shockwave';
+                    warn.style.cssText = `
+                        left: ${cx}px; top: ${cy}px;
+                        width: 30px; height: 30px; margin: -15px;
+                        border-color: #ff0000;
+                        border-width: 5px;
+                        transition: all 0.3s ease-out;
+                    `;
+                    container.appendChild(warn);
+                    setTimeout(() => {
+                        warn.style.width = '200px';
+                        warn.style.height = '200px';
+                        warn.style.margin = '-100px';
+                        warn.style.opacity = '0';
+                    }, 10);
+                }, i * 30);
+            }
+            shake('heavy');
+            await sleep(200);
+
+            // 拳头出现
+            const fist = document.createElement('div');
+            fist.style.cssText = `
+                position: absolute; left: ${cx - 50}px; top: -120px;
+                font-size: 100px; z-index: 200;
+                transition: all 0.12s ease-in;
+                filter: drop-shadow(0 0 20px rgba(255, 100, 0, 0.8));
+            `;
+            fist.textContent = String.fromCodePoint(0x1F44A);
+            container.appendChild(fist);
+
+            await sleep(150);
+
+            // 一拳下去！
+            fist.style.top = (cy - 50) + 'px';
+            fist.style.transform = 'scale(2) rotate(-15deg)';
+
+            await sleep(120);
+
+            // 巨大冲击！！！（不闪屏，用红色爆炸波）
+            shake('extreme');
+
+            // 大量红色爆炸冲击波！
+            for (let i = 0; i < 15; i++) {
+                setTimeout(() => {
+                    const wave = document.createElement('div');
+                    wave.className = 'shockwave';
+                    const redColors = ['#ff0000', '#ff2200', '#ff3300', '#cc0000', '#ee0000'];
+                    wave.style.cssText = `
+                        left: ${cx + (Math.random() - 0.5) * 40}px;
+                        top: ${cy + (Math.random() - 0.5) * 40}px;
+                        width: 30px; height: 30px; margin: -15px;
+                        border-color: ${redColors[i % redColors.length]};
+                        border-width: ${6 + Math.random() * 4}px;
+                        transition: all 0.35s ease-out;
+                    `;
+                    container.appendChild(wave);
+                    setTimeout(() => {
+                        wave.style.width = '500px';
+                        wave.style.height = '500px';
+                        wave.style.margin = '-250px';
+                        wave.style.opacity = '0';
+                    }, 10);
+                }, i * 20);
+            }
+
+            // 额外的红色爆炸球
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    const explosion = document.createElement('div');
+                    explosion.style.cssText = `
+                        position: absolute;
+                        left: ${cx + (Math.random() - 0.5) * 100}px;
+                        top: ${cy + (Math.random() - 0.5) * 100}px;
+                        width: 40px; height: 40px; margin: -20px;
+                        background: radial-gradient(circle, #fff 0%, #ff3300 20%, #ff0000 40%, #cc0000 60%, transparent 80%);
+                        border-radius: 50%;
+                        pointer-events: none;
+                        z-index: 130;
+                        transition: all 0.3s ease-out;
+                    `;
+                    container.appendChild(explosion);
+                    setTimeout(() => {
+                        explosion.style.width = '150px';
+                        explosion.style.height = '150px';
+                        explosion.style.margin = '-75px';
+                        explosion.style.opacity = '0';
+                    }, 10);
+                }, i * 25);
+            }
+
+            await sleep(50);
+
+            // 巨大裂痕 - 从中心向外辐射
+            const megaCrackCount = 32;
+            for (let i = 0; i < megaCrackCount; i++) {
+                const crack = document.createElement('div');
+                crack.className = 'deep-crack';
+                const crackAngle = (i / megaCrackCount) * Math.PI * 2 + (Math.random() - 0.5) * 0.2;
+                const crackLen = 200 + Math.random() * 300;
+                crack.style.cssText = `
+                    left: ${cx}px; top: ${cy}px;
+                    width: 0px;
+                    height: ${4 + Math.random() * 5}px;
+                    transform: rotate(${crackAngle}rad);
+                    background: linear-gradient(90deg, #000 0%, #111 20%, #000 50%, #222 80%, transparent 100%);
+                    box-shadow: 0 3px 8px rgba(0,0,0,1);
+                    transition: width 0.4s ease-out;
+                `;
+                container.appendChild(crack);
+                setTimeout(() => { crack.style.width = crackLen + 'px'; }, 5 + i * 3);
+            }
+
+            // 中心巨大弹坑！
+            const megaCrater = document.createElement('div');
+            megaCrater.className = 'crater';
+            megaCrater.style.cssText = `
+                left: ${cx - 80}px; top: ${cy - 55}px;
+                width: 160px; height: 110px;
+                background: radial-gradient(ellipse, #000 0%, #0a0a0a 30%, #151515 50%, #222 75%, transparent 95%);
+                box-shadow: inset 0 15px 50px rgba(0,0,0,1), 0 0 30px rgba(0,0,0,0.8);
+            `;
+            container.appendChild(megaCrater);
+
+            // 内圈深坑
+            const innerCrater = document.createElement('div');
+            innerCrater.className = 'crater';
+            innerCrater.style.cssText = `
+                left: ${cx - 40}px; top: ${cy - 28}px;
+                width: 80px; height: 56px;
+                background: radial-gradient(ellipse, #000 0%, #050505 60%, transparent 100%);
+                box-shadow: inset 0 8px 25px rgba(0,0,0,1);
+            `;
+            container.appendChild(innerCrater);
+
+            // 碎片飞溅
+            for (let i = 0; i < 150; i++) {
+                const shard = createShard(cx, cy, 10 + Math.random() * 25, Math.random() * 60);
+                const angle = Math.random() * Math.PI * 2;
+                const dist = 80 + Math.random() * 250;
+                shard.style.transition = `all ${0.2 + Math.random() * 0.2}s ease-out`;
+                setTimeout(() => {
+                    shard.style.left = (cx + Math.cos(angle) * dist) + 'px';
+                    shard.style.top = (cy + Math.sin(angle) * dist + 30) + 'px';
+                    shard.style.transform = `rotate(${Math.random() * 720}deg)`;
+                    shard.style.opacity = '0';
+                }, 5);
+            }
+
+            // 拳头消失
+            setTimeout(() => {
+                fist.style.opacity = '0';
+                fist.style.transform = 'scale(2)';
+                setTimeout(() => fist.remove(), 200);
+            }, 300);
+        }
+
+        // ==================== 散弹枪风暴（有节奏：左70 → 顿 → 右70 → 顿 → 远处70）====================
+        async function shotgunStorm(ballX, ballY) {
+            cx = ballX;
+            cy = ballY;
+
+            // 追踪弹孔元素，以便清理
+            let bulletHoles = [];
+            let crackLines = [];
+
+            // 定期清理旧弹孔（每隔一段时间移除最早的一批）
+            let cleanupInterval = null;
+            function startCleanup() {
+                cleanupInterval = setInterval(() => {
+                    // 每次清理10-15个旧弹孔
+                    const cleanCount = Math.min(12, bulletHoles.length - 50);
+                    for (let i = 0; i < cleanCount && bulletHoles.length > 50; i++) {
+                        const hole = bulletHoles.shift();
+                        if (hole && hole.parentNode) {
+                            hole.style.transition = 'opacity 0.3s';
+                            hole.style.opacity = '0';
+                            setTimeout(() => hole.remove(), 300);
+                        }
+                    }
+                    // 同时清理裂纹
+                    const crackClean = Math.min(20, crackLines.length - 100);
+                    for (let i = 0; i < crackClean && crackLines.length > 100; i++) {
+                        const crack = crackLines.shift();
+                        if (crack && crack.parentNode) {
+                            crack.style.transition = 'opacity 0.2s';
+                            crack.style.opacity = '0';
+                            setTimeout(() => crack.remove(), 200);
+                        }
+                    }
+                }, 800);  // 每800ms清理一次
+            }
+
+            function stopCleanup() {
+                if (cleanupInterval) {
+                    clearInterval(cleanupInterval);
+                    cleanupInterval = null;
+                }
+            }
+
+            // 枪口火焰效果
+            function muzzleFlash(muzzleX, muzzleY, power = 1) {
+                const flash = document.createElement('div');
+                const size = 60 * power;
+                flash.style.cssText = `
+                    position: absolute;
+                    left: ${muzzleX}px; top: ${muzzleY - size/2}px;
+                    width: ${size}px; height: ${size}px;
+                    background: radial-gradient(circle, #fff 0%, #ff0 20%, #f80 40%, #f00 60%, transparent 70%);
+                    border-radius: 50%;
+                    z-index: 170;
+                    pointer-events: none;
+                `;
+                container.appendChild(flash);
+                setTimeout(() => flash.remove(), 50);
+            }
+
+            // 记录开始时间，前3秒才显示黄屏
+            const startTime = Date.now();
+
+            // 发射一轮散弹（单发，可调节威力）
+            // power: 1 = 普通, 1.3 = 增强, 1.6 = 强力, 2 = 终结
+            async function fireOneShot(fromLeft, targetCenterX, targetCenterY, power = 1, volume = 0.8) {
+                const muzzleX = fromLeft ? -20 : w + 20;
+                const muzzleY = 50 + Math.random() * (h - 100);
+
+                // 播放枪声（音量可调）
+                playShotgunSound(volume);
+
+                // 枪口火焰（随威力增大）
+                muzzleFlash(muzzleX, muzzleY, power);
+
+                // 弹丸数量随威力增加
+                const pelletCount = Math.floor(15 * power);
+                for (let pellet = 0; pellet < pelletCount; pellet++) {
+                    const spread = 220 * power;  // 散射范围随威力增加
+                    const targetX = targetCenterX + (Math.random() - 0.5) * spread;
+                    const targetY = targetCenterY + (Math.random() - 0.5) * spread;
+
+                    // 弹道（随威力变粗）
+                    const trail = document.createElement('div');
+                    trail.className = 'bullet-trail';
+                    const angle = Math.atan2(targetY - muzzleY, targetX - muzzleX);
+                    const dist = Math.sqrt((targetX - muzzleX) ** 2 + (targetY - muzzleY) ** 2);
+                    trail.style.cssText = `
+                        left: ${muzzleX}px; top: ${muzzleY}px;
+                        width: 0px; height: ${6 * power}px;
+                        transform: rotate(${angle}rad);
+                        transition: width 0.02s linear;
+                    `;
+                    container.appendChild(trail);
+                    setTimeout(() => { trail.style.width = dist + 'px'; }, 1);
+                    setTimeout(() => trail.remove(), 120);
+
+                    // 弹孔（随威力增大！）
+                    setTimeout(() => {
+                        const hole = document.createElement('div');
+                        hole.className = 'bullet-hole';
+                        const baseSize = 25 + Math.random() * 35;
+                        const holeSize = baseSize * power;  // 威力越大弹孔越大
+                        hole.style.cssText = `
+                            left: ${targetX - holeSize/2}px; top: ${targetY - holeSize/2}px;
+                            width: ${holeSize}px; height: ${holeSize}px;
+                            box-shadow: inset 0 0 ${holeSize/2}px rgba(0,0,0,0.9), 0 0 ${holeSize/3}px rgba(0,0,0,0.5);
+                        `;
+                        container.appendChild(hole);
+                        bulletHoles.push(hole);  // 追踪弹孔
+
+                        // 裂纹（威力越大越长越多）
+                        const crackCount = Math.floor(5 * power);
+                        for (let c = 0; c < crackCount; c++) {
+                            const crack = createCrack(targetX, targetY, Math.random() * Math.PI * 2, (30 + Math.random() * 70) * power);
+                            crackLines.push(crack);  // 追踪裂纹
+                        }
+
+                        // 火花（威力越大越多越远，后半段火花更多）
+                        const sparkMultiplier = power > 1.3 ? 2.5 : 1;  // 后半段火花量翻倍
+                        const sparkCount = Math.floor(6 * power * sparkMultiplier);
+                        for (let s = 0; s < sparkCount; s++) {
+                            const spark = document.createElement('div');
+                            spark.className = 'shard';
+                            const sparkAngle = Math.random() * Math.PI * 2;
+                            const sparkSize = (4 + Math.random() * 6) * power;
+                            spark.style.cssText = `
+                                left: ${targetX}px; top: ${targetY}px;
+                                width: ${sparkSize}px; height: ${sparkSize}px;
+                                background: ${['#ff0', '#f80', '#fff', '#f00', '#ff4400', '#ffaa00'][s % 6]};
+                                border-radius: 50%;
+                                transition: all 0.18s ease-out;
+                            `;
+                            container.appendChild(spark);
+                            setTimeout(() => {
+                                spark.style.left = (targetX + Math.cos(sparkAngle) * 50 * power) + 'px';
+                                spark.style.top = (targetY + Math.sin(sparkAngle) * 50 * power) + 'px';
+                                spark.style.opacity = '0';
+                            }, 5);
+                            setTimeout(() => spark.remove(), 200);
+                        }
+
+                        // 添加穿透感的深坑效果（威力越大越深，后半段穿透孔更多）
+                        const innerHoleCount = power > 1.3 ? Math.floor(power) : 1;  // 后半段多个穿透孔
+                        for (let ih = 0; ih < innerHoleCount; ih++) {
+                            const innerHole = document.createElement('div');
+                            innerHole.className = 'bullet-hole';
+                            const innerSize = holeSize * (0.4 + power * 0.1) * (1 - ih * 0.2);
+                            const offsetX = ih === 0 ? 0 : (Math.random() - 0.5) * holeSize * 0.3;
+                            const offsetY = ih === 0 ? 0 : (Math.random() - 0.5) * holeSize * 0.3;
+                            innerHole.style.cssText = `
+                                left: ${targetX - innerSize/2 + offsetX}px; top: ${targetY - innerSize/2 + offsetY}px;
+                                width: ${innerSize}px; height: ${innerSize}px;
+                                background: radial-gradient(circle, #000 0%, #000 60%, transparent 100%);
+                                box-shadow: inset 0 0 ${innerSize}px rgba(0,0,0,1);
+                            `;
+                            container.appendChild(innerHole);
+                            bulletHoles.push(innerHole);  // 追踪内孔
+                        }
+                    }, 20);
+                }
+
+                // 前3秒才显示黄屏闪光，之后只震动
+                const elapsed = Date.now() - startTime;
+                if (elapsed < 3000) {
+                    flash('rgba(255, 200, 100, 0.5)', 50);
+                }
+                shake('extreme');
+            }
+
+            // 开始定期清理旧弹孔
+            startCleanup();
+
+            // ===== 第一波：左边70发（覆盖整个右半屏幕）- 普通威力 =====
+            shake('extreme');
+            for (let i = 0; i < 70; i++) {
+                // 目标覆盖屏幕右侧大范围
+                const targetX = w * 0.3 + Math.random() * w * 0.65;
+                const targetY = 30 + Math.random() * (h - 60);
+                // 前半段威力1.0，后半段威力逐渐增加到1.2
+                const power = i < 35 ? 1.0 : 1.0 + (i - 35) / 35 * 0.2;
+                await fireOneShot(true, targetX, targetY, power, 0.8);
+                // 每3发额外震一下，保持持续震动
+                if (i % 3 === 0) shake('extreme');
+                await sleep(120);  // 散弹枪节奏
+            }
+
+            // ===== 顿一下 =====
+            await sleep(500);
+
+            // ===== 第二波：右边70发（覆盖整个左半屏幕）- 增强威力 =====
+            shake('extreme');
+            for (let i = 0; i < 70; i++) {
+                // 目标覆盖屏幕左侧大范围
+                const targetX = Math.random() * w * 0.65 + w * 0.05;
+                const targetY = 30 + Math.random() * (h - 60);
+                // 威力从1.2逐渐增加到1.5
+                const power = 1.2 + (i / 70) * 0.3;
+                await fireOneShot(false, targetX, targetY, power, 0.85);
+                // 每3发额外震一下
+                if (i % 3 === 0) shake('extreme');
+                await sleep(120);  // 散弹枪节奏
+            }
+
+            // ===== 顿一下 =====
+            await sleep(500);
+
+            // ===== 第三波：远处70发（从四面八方射向中心区域）- 强力威力 =====
+            shake('extreme');
+            for (let i = 0; i < 70; i++) {
+                // 随机从四个方向
+                const fromLeft = Math.random() > 0.5;
+                // 目标在中心区域（范围扩大）
+                const targetCenterX = cx + (Math.random() - 0.5) * w * 0.7;
+                const targetCenterY = cy + (Math.random() - 0.5) * h * 0.7;
+                // 威力从1.4逐渐增加到1.8
+                const power = 1.4 + (i / 70) * 0.4;
+                await fireOneShot(fromLeft, targetCenterX, targetCenterY, power, 0.9);
+                // 每2发额外震一下（第三波震动更频繁）
+                if (i % 2 === 0) shake('extreme');
+                await sleep(100);  // 散弹枪节奏
+            }
+
+            // ===== 顿一下，准备终结 =====
+            await sleep(400);
+
+            // ===== 终结！5发超级大枪声！=====
+            for (let i = 0; i < 5; i++) {
+                const fromLeft = i % 2 === 0;
+                // 终结枪目标中心区域
+                const targetX = cx + (Math.random() - 0.5) * w * 0.5;
+                const targetY = cy + (Math.random() - 0.5) * h * 0.5;
+                // 超级威力！音量拉满！
+                await fireOneShot(fromLeft, targetX, targetY, 2.0, 1.0);
+                // 终结枪只震动，不闪屏
+                shake('extreme');
+                await sleep(250);  // 终结枪之间间隔长一点，更有冲击感
+            }
+
+            // 停止弹孔清理
+            stopCleanup();
+
+            // 最后一个大震动（不闪屏）
+            shake('extreme');
+        }
+
+        // 接收主进程的开始信号
+        ipcRenderer.on('start-destruction', (event, data) => {
+            w = data.screenWidth;
+            h = data.screenHeight;
+            ultimateDestroy(data.ballX, data.ballY);
+        });
+
+        // 接收散弹枪风暴信号
+        ipcRenderer.on('start-shotgun', (event, data) => {
+            w = data.screenWidth;
+            h = data.screenHeight;
+            shotgunStorm(data.ballX, data.ballY);
+        });
+    </script>
+</body>
+</html>
